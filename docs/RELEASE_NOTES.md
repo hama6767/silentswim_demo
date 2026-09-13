@@ -1,5 +1,7 @@
 Graphics-first update for the native Rust + egui SilentSwim mathematical demo studio.
 
+v0.2.1 keeps the full six-component comparison and feasibility status visible in allocation presentation mode and video exports.
+
 - Default view emphasizes linked diagrams and plots; **Math** preserves the full specialist interface.
 - Single-fin command map linked to animated swing amplitude, stroke rate and current/reference force bars.
 - Four-fin view explicitly distinguishes local horizontal force **h** and vertical force **v**, both in N; selectable fin overlays and common-scale force triangles show their resultant.

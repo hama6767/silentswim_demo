@@ -345,7 +345,8 @@ impl Studio {
             self.alloc.frequencies,
         );
         let ref_a = allocation(&self.model, &self.geometry, &self.alloc, [0.; 2], [1.5; 4]);
-        let h = (height * 0.45).clamp(240., 410.);
+        let ratio = if self.presentation { 0.39 } else { 0.45 };
+        let h = (height * ratio).clamp(220., 410.);
         ui.columns(2,|c|{
             c[0].horizontal(|ui|{ui.label(RichText::new("h: horizontal force").color(TEAL)).on_hover_text("Force along this fin's own horizontal direction; not the robot's x component.");ui.label(RichText::new("v: vertical force").color(BLUE));});
             robot_components(&mut c[0],h,&mut self.robot_camera,&self.geometry,&a,self.phase,Some(self.selected_fin));
