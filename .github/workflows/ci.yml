@@ -22,7 +22,8 @@ jobs:
       - name: Format
         run: |
           cargo fmt --all -- --check
-          rustfmt --edition 2024 --check src/views.rs src/export.rs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustfmt --edition 2024 --check src/views.rs src/export.rs src/graphics.rs
       - name: Numerical and scene validation tests
         run: cargo test --locked
       - name: Clippy
@@ -36,4 +37,3 @@ jobs:
           name: silentswim-studio-windows-x64
           path: target/release/silentswim-studio.exe
           if-no-files-found: error
-

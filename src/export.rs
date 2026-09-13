@@ -179,6 +179,7 @@ impl Studio {
             };
             self.surface_mode = frame == 2;
             self.matrix_mode = frame == 4;
+            self.math_mode = frame == 4;
             self.show_vectors = frame == 1;
             self.cursor = self.path.len() - 1;
             self.phase = 0.6;
@@ -469,7 +470,11 @@ impl eframe::App for Studio {
                     });
                 }
             });
-        self.sidebar(ctx);
+        if self.math_mode {
+            self.sidebar(ctx);
+        } else {
+            self.graphic_controls(ctx);
+        }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -495,11 +500,15 @@ impl eframe::App for Studio {
                                 );
                             });
                         }
-                        match self.tab {
-                            0 => self.hearing(ui, height),
-                            1 => self.single_view(ui, height),
-                            2 => self.allocation_view(ui, height),
-                            _ => self.evidence(ui, height),
+                        if !self.math_mode {
+                            self.graphic_view(ui, height);
+                        } else {
+                            match self.tab {
+                                0 => self.hearing(ui, height),
+                                1 => self.single_view(ui, height),
+                                2 => self.allocation_view(ui, height),
+                                _ => self.evidence(ui, height),
+                            }
                         }
                     });
             });

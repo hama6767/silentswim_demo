@@ -4,7 +4,9 @@ A native **Rust + egui** mathematical demo studio for *SilentSwim: Embedding Aud
 
 **This is a theory demonstrator, not an experimental reproduction.** Interactive acoustics, audiograms, force calibration and robot geometry are explicitly illustrative. The Evidence page separately displays the aggregate measurements reported in the supplied manuscript. No unpublished PDF, learned weights or experimental recordings are bundled.
 
-![Native single-fin surface, gradients and local curvature](docs/images/single-fin.png)
+**v0.2 opens in a graphics-first view.** Use **Math** in the top bar to reveal the full equations, matrices, curvature and expert controls.
+
+![Single-fin command map linked to fin motion and force comparison](docs/images/single-fin.png)
 
 ![Native four-fin null-space allocation and feasibility view](docs/images/allocation.png)
 
@@ -28,11 +30,13 @@ All plots support hover inspection and normal egui_plot navigation. 3D scenes su
 ## 発表・動画向けの使い方
 
 1. **Hearing** で Catfish-like / Salmon-like / Broadband を切り替え、周波数重みによって評価が変わることを示します。
-2. **Single fin** で等力線と勾配場を表示し、`lambda F` を動かします。2D上をクリックすると初期値が変わり、`3D surface` で数理的な地形に切り替えられます。
-3. **Allocation** で `z1`, `z2` と4つの周波数を変え、`Refine 6 variables` を押します。`Show B, N and wrench values` で6成分の保存を確認できます。デッドバンドを上げると、配分レベルの保存だけでは不十分な理由を説明できます。
+2. **Single fin** で左の命令マップと右のフィンの動き、目標と現在の力バーを見比べます。`Force strictness` で力の誤差への罰則を調整します。2D上のクリックで初期値を変え、`Replay descent` で探索を再生。`2D / 3D` で表示を切り替えます。数式・ヘッセ行列・目的関数の切替は上部の **Math** にあります。
+3. **Allocation** の水色 **h** は各フィンの局所的な横方向の力、青 **v** は縦方向の力で、どちらも単位は **N** です。右図はロボットの位置ではなく、分担を変える `z1 / z2` の地図です。点を動かすと4枚の分力と合力が変わり、下の6成分の棒で基準との一致を確認できます。各フィンの矢印はカード間で共通スケール、6本の棒は成分別スケールで、下の数値は基準との差です。`Find quieter allocation` で2個のzと4個の周波数をまとめて探索します。B/N行列・正確な各成分の値は **Math** で表示します。
 4. **Evidence** で実測集計結果を示します。特に速度追従RMSEの増加を含め、音響改善と追従性能を分けて説明します。
 
 UIは国際会議でそのまま収録しやすい英語表記です。仮データの画面には `ILLUSTRATIVE MODEL` を常時表示します。
+
+③のマップは、現在の4つの周波数を固定した目的関数 **J4** の断面です。色には音響項と変更への罰則が含まれ、赤紫はその周波数・振幅範囲・デッドバンドで実現できない配分を示します。金の点は基準、白の点は選択中の配分です。周波数を動かすとマップも変わります。
 
 ### Stage and capture
 

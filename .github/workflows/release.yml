@@ -42,7 +42,7 @@ jobs:
         run: |
           cargo fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          rustfmt --edition 2024 --check src/views.rs src/export.rs
+          rustfmt --edition 2024 --check src/views.rs src/export.rs src/graphics.rs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -92,4 +92,3 @@ jobs:
           else
             gh release create "$RELEASE_TAG" dist/* --verify-tag --title "SilentSwim Studio $RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md
           fi
-

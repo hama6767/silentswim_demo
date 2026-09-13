@@ -21,6 +21,7 @@ const CAPTIONS: [&str; 4] = [
 ];
 include!("views.rs");
 include!("export.rs");
+include!("graphics.rs");
 
 #[derive(Serialize, Deserialize)]
 struct Preset {
@@ -41,6 +42,8 @@ struct Recording {
 
 pub struct Studio {
     tab: usize,
+    math_mode: bool,
+    selected_fin: usize,
     profile: Profile,
     model: Acoustics,
     single: SingleSettings,
@@ -135,7 +138,7 @@ impl Studio {
         } else {
             None
         };
-        Self{tab:0,profile:Profile::Catfish,model,single,alloc:AllocSettings::default(),geometry:Geometry::demo(),path,cursor:0,phase:0.,playing:!(qa||tour),speed:1.,story:false,presentation:false,fullscreen:false,surface_mode:false,field:0,show_vectors:false,matrix_mode:false,evidence_metric:0,camera:Camera::default(),robot_camera:Camera::default(),status:"Ready. All interactive model data are illustrative; evidence values are from the paper.".into(),texture:None,null_texture:None,recording:record,screenshot:None,capture_button:false,last:Instant::now(),tick:0.,export_seconds:24,export_fps:30,qa_exit:qa||tour,frames:0}
+        Self{tab:0,math_mode:false,selected_fin:0,profile:Profile::Catfish,model,single,alloc:AllocSettings::default(),geometry:Geometry::demo(),path,cursor:0,phase:0.,playing:!(qa||tour),speed:1.,story:false,presentation:false,fullscreen:false,surface_mode:false,field:0,show_vectors:false,matrix_mode:false,evidence_metric:0,camera:Camera::default(),robot_camera:Camera::default(),status:"Ready. All interactive model data are illustrative; evidence values are from the paper.".into(),texture:None,null_texture:None,recording:record,screenshot:None,capture_button:false,last:Instant::now(),tick:0.,export_seconds:24,export_fps:30,qa_exit:qa||tour,frames:0}
     }
     fn rebuild(&mut self) {
         self.model = Acoustics::new(self.profile);
@@ -224,6 +227,13 @@ impl Studio {
                             .clicked()
                         {
                             self.presentation = !self.presentation;
+                        }
+                        if ui
+                            .selectable_label(self.math_mode, "Math")
+                            .on_hover_text("Equations, matrices and detailed annotations")
+                            .clicked()
+                        {
+                            self.math_mode = !self.math_mode;
                         }
                         if ui
                             .button("PNG")

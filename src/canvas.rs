@@ -177,6 +177,19 @@ pub fn robot(
     a: &Allocation,
     t: f64,
 ) {
+    robot_components(ui, height, cam, g, a, t, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn robot_components(
+    ui: &mut egui::Ui,
+    height: f32,
+    cam: &mut Camera,
+    g: &Geometry,
+    a: &Allocation,
+    t: f64,
+    selected: Option<usize>,
+) {
     let (r, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::drag());
     cam.interact(&response);
@@ -239,7 +252,36 @@ pub fn robot(
             pos[1] + dir[1] * a.q[i] * 0.6,
             pos[2] + a.q[i + 4] * 0.6,
         ];
-        arrow(&p, proj(pos), proj(v), color, 2.8);
+        if selected.is_none() {
+            arrow(&p, proj(pos), proj(v), color, 2.8);
+        }
+        if selected == Some(i) {
+            let hv = [
+                pos[0] + dir[0] * a.q[i] * 0.9,
+                pos[1] + dir[1] * a.q[i] * 0.9,
+                pos[2],
+            ];
+            let vv = [pos[0], pos[1], pos[2] + a.q[i + 4] * 0.9];
+            let full = [hv[0], hv[1], vv[2]];
+            arrow(&p, proj(pos), proj(hv), TEAL, 3.5);
+            arrow(&p, proj(pos), proj(vv), BLUE, 3.5);
+            arrow(&p, proj(pos), proj(full), GOLD, 2.0);
+            p.circle_stroke(proj(pos), 7., Stroke::new(2.0_f32, Color32::WHITE));
+            p.text(
+                proj(hv) + Vec2::new(10., 12.),
+                egui::Align2::LEFT_CENTER,
+                "h",
+                egui::FontId::proportional(22.),
+                TEAL,
+            );
+            p.text(
+                proj(vv) + Vec2::new(0., -12.),
+                egui::Align2::CENTER_BOTTOM,
+                "v",
+                egui::FontId::proportional(22.),
+                BLUE,
+            );
+        }
         let label = proj([pos[0], pos[1] + sign * 0.62, 0.]);
         p.text(
             label,

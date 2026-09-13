@@ -1,4 +1,13 @@
-Native Windows x64 mathematical demo studio for SilentSwim, built with Rust and egui.
+Graphics-first update for the native Rust + egui SilentSwim mathematical demo studio.
+
+- Default view emphasizes linked diagrams and plots; **Math** preserves the full specialist interface.
+- Single-fin command map linked to animated swing amplitude, stroke rate and current/reference force bars.
+- Four-fin view explicitly distinguishes local horizontal force **h** and vertical force **v**, both in N; selectable fin overlays and common-scale force triangles show their resultant.
+- Redistribution map labels the z1/z2 parameter space, current selection, reference and feasibility mask; a numeric color scale identifies the fixed-frequency J4 slice.
+- Six body-wrench comparisons show reference outlines, reconstructed final commands and residuals.
+- Simpler visual acoustic/tracking evidence comparison, with full reported statistics still available in Math.
+
+Existing capabilities remain available:
 
 - Interactive auditory weighting, PSD integration and within-profile command comparisons.
 - Single-fin acoustic/objective/residual heatmaps, 3D surfaces, gradients, constant-force contours and optimizer playback.
