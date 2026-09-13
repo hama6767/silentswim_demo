@@ -1,0 +1,39 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: |
+          cargo fmt --all -- --check
+          rustfmt --edition 2024 --check src/views.rs src/export.rs
+      - name: Numerical and scene validation tests
+        run: cargo test --locked
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Build portable Windows executable
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --locked --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: silentswim-studio-windows-x64
+          path: target/release/silentswim-studio.exe
+          if-no-files-found: error
+
