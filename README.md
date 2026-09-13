@@ -4,6 +4,10 @@ A native **Rust + egui** mathematical demo studio for *SilentSwim: Embedding Aud
 
 **This is a theory demonstrator, not an experimental reproduction.** Interactive acoustics, audiograms, force calibration and robot geometry are explicitly illustrative. The Evidence page separately displays the aggregate measurements reported in the supplied manuscript. No unpublished PDF, learned weights or experimental recordings are bundled.
 
+![Native single-fin surface, gradients and local curvature](docs/images/single-fin.png)
+
+![Native four-fin null-space allocation and feasibility view](docs/images/allocation.png)
+
 ## Download and run
 
 Download **silentswim-studio.exe** from [Releases](https://github.com/hama6767/silentswim_demo/releases/latest), then double-click it. The Windows x64 release uses a statically linked MSVC runtime. No Rust, Python, model download, or network connection is needed to run the app. A graphics driver with OpenGL support is required. Release binaries are unsigned.
@@ -15,7 +19,7 @@ The ZIP contains the same executable plus this guide and the mathematical notes.
 | Workspace | Expert-facing controls and displays |
 | --- | --- |
 | **01 Hearing** | Log-frequency threshold interpolation; normalized auditory weights with finite support; PSD and weighted PSD; cumulative energy integral; within-profile command comparison |
-| **02 Single fin** | Acoustic, total-cost and signed-force-residual heatmaps; 3D orbitable surfaces; analytical constant-force contours; negative gradient field; click-to-initialize descent; stepwise convergence; force-penalty sweep |
+| **02 Single fin** | Acoustic, total-cost and signed-force-residual heatmaps; 3D orbitable surfaces; local derivatives and Hessian eigenvalues; analytical constant-force contours; negative gradient field; click-to-initialize descent; stepwise convergence; force-penalty sweep |
 | **03 Allocation** | Animated four-fin geometry; two-dimensional null-space cost/feasibility map; six-variable automatic differentiation and Adam refinement; analytical amplitude inversion; per-fin frequency feasibility; B/N matrices; all six wrench components reconstructed after deadband |
 | **04 Evidence** | Table I objective ablation with mean ± SD; Table II closed-loop acoustic and tracking results; explicit speed-tracking tradeoff; validation statistics |
 
@@ -76,6 +80,14 @@ silentswim-studio.exe --capture-all --out captures
 
 This requires a desktop graphics session; it is not a headless HTML mock. It exercises both 2D/3D single-fin views, the robot and matrix views, hearing, and reported evidence.
 
+For reproducible video-frame export without file dialogs (then exit):
+
+```text
+silentswim-studio.exe --export-tour --seconds 24 --fps 30 --out captures/my-tour
+```
+
+Use a new empty output folder. Local validation includes native capture of all six views and a complete 40-frame tour with CSV/JSON and encoder-script export.
+
 ## GitHub Actions release
 
 - `Verify` runs formatting, numerical tests, Clippy and a Windows build on pushes to `main` and pull requests.
@@ -86,4 +98,3 @@ This requires a desktop graphics session; it is not a headless HTML mock. It exe
 ## Source layout
 
 `ad.rs`: six-component forward AD. `model.rs`: acoustics, force inversion, single-fin solver and null-space allocation. `canvas.rs`: native 3D mathematical surfaces and robot schematic. `app.rs` / `views.rs`: interactive workspaces. `export.rs`: scene validation, numerical export, deterministic tour and native framebuffer capture.
-

@@ -1,4 +1,63 @@
 impl Studio {
+    fn differential_view(&self, ui: &mut egui::Ui, p: Step) {
+        ui.label(
+            RichText::new("Local differential structure")
+                .size(19.)
+                .color(TEAL),
+        );
+        Self::note(
+            ui,
+            "Evaluated at the current command (A, f); coordinate units are rad and Hz.",
+        );
+        let acoustic = self.model.score(
+            Jet::var(p.a, 0),
+            Jet::var(p.f, 1),
+            Jet::c(self.single.theta),
+        );
+        let thrust = force_jet(Jet::var(p.a, 0), Jet::var(p.f, 1));
+        let eps = 1e-4;
+        let ap = single_step(&self.model, &self.single, p.a + eps, p.f);
+        let am = single_step(&self.model, &self.single, p.a - eps, p.f);
+        let fp = single_step(&self.model, &self.single, p.a, p.f + eps);
+        let fm = single_step(&self.model, &self.single, p.a, p.f - eps);
+        let haa = (ap.grad[0] - am.grad[0]) / (2. * eps);
+        let hff = (fp.grad[1] - fm.grad[1]) / (2. * eps);
+        let haf = ((ap.grad[1] - am.grad[1]) + (fp.grad[0] - fm.grad[0])) / (4. * eps);
+        let spread = ((haa - hff).powi(2) + 4. * haf * haf).sqrt();
+        egui::Grid::new("derivatives")
+            .spacing([22., 10.])
+            .show(ui, |ui| {
+                ui.label("Derivative");
+                ui.label("with respect to A");
+                ui.label("with respect to f");
+                ui.end_row();
+                for (label, values) in [
+                    ("Acoustic score", [acoustic.d[0], acoustic.d[1]]),
+                    ("Model force", [thrust.d[0], thrust.d[1]]),
+                    ("Total objective", p.grad),
+                ] {
+                    ui.label(label);
+                    for v in values {
+                        ui.monospace(format!("{v:+.5}"));
+                    }
+                    ui.end_row();
+                }
+            });
+        ui.add_space(9.);
+        ui.label(RichText::new("Hessian of J1 (central differences of AD gradients)").color(BLUE));
+        ui.monospace(format!(
+            "[ {haa:10.3}  {haf:10.3} ]\n[ {haf:10.3}  {hff:10.3} ]"
+        ));
+        ui.label(format!(
+            "Eigenvalues: {:.3}, {:.3}",
+            (haa + hff - spread) / 2.,
+            (haa + hff + spread) / 2.
+        ));
+        Self::note(
+            ui,
+            "The local quadratic approximation describes curvature, not global optimality. A boundary solution need not have zero unconstrained gradient.",
+        );
+    }
     fn allocation_view(&mut self, ui: &mut egui::Ui, height: f32) {
         self.heading(ui,"03 / REDUNDANCY -> QUIETER ALLOCATION","Change the fin commands. Keep the modeled wrench.","Illustrative rank-six geometry, two null coordinates, four frequency variables, and exact force inversion.");
         let a = allocation(
@@ -57,14 +116,14 @@ impl Studio {
             self.matrix_view(ui, &a);
         } else {
             ui.columns(2,|c|{
-                c[0].label("Four-fin command realization · arbitrary animation phase");robot(&mut c[0],(height*0.4).clamp(255.,350.),&mut self.robot_camera,&self.geometry,&a,self.phase);
+                c[0].label("Four-fin command realization · arbitrary animation phase");robot(&mut c[0],(height*0.32).clamp(220.,280.),&mut self.robot_camera,&self.geometry,&a,self.phase);
                 c[1].label("Null-space objective J4 · frequencies held at current values");
                 let n=45;let mut grid=vec![vec![None;n];n];let mut low=f64::INFINITY;let mut high=f64::NEG_INFINITY;
                 for (i,row) in grid.iter_mut().enumerate(){for (j,value) in row.iter_mut().enumerate(){let z=[-1.1+2.2*i as f64/(n-1) as f64,-1.1+2.2*j as f64/(n-1) as f64];let aa=allocation(&self.model,&self.geometry,&self.alloc,z,self.alloc.frequencies);if aa.feasible{*value=Some(aa.cost);low=low.min(aa.cost);high=high.max(aa.cost);}}}
                 let mut pixels=Vec::new();for j in (0..n).rev(){for row in &grid{pixels.push(row[j].map_or(Color32::from_rgb(74,34,49),|v|palette((v-low)/(high-low).max(1e-9))));}}
                 let image=egui::ColorImage::new([n,n],pixels);if let Some(t)=&mut self.null_texture {t.set(image,egui::TextureOptions::NEAREST);}else{self.null_texture=Some(c[1].ctx().load_texture("null-landscape",image,egui::TextureOptions::NEAREST));}
                 let tex=self.null_texture.as_ref().unwrap().id();
-                let response=Plot::new("nullspace").height((height*0.4).clamp(255.,350.)).data_aspect(1.).x_axis_label("z1 [N]").y_axis_label("z2 [N]").include_x(-1.1).include_x(1.1).include_y(-1.1).include_y(1.1).allow_scroll(false).show(&mut c[1],|p|{
+                let response=Plot::new("nullspace").height((height*0.32).clamp(220.,280.)).data_aspect(1.).x_axis_label("z1 [N]").y_axis_label("z2 [N]").include_x(-1.1).include_x(1.1).include_y(-1.1).include_y(1.1).allow_scroll(false).show(&mut c[1],|p|{
                     p.image(PlotImage::new("J4 / feasibility mask",tex,PlotPoint::new(0.,0.),Vec2::splat(2.2)));
                     p.points(Points::new("Nominal",vec![[0.,0.]]).radius(5.0_f32).color(GOLD));p.points(Points::new("Current",vec![self.alloc.z]).radius(6.0_f32).color(Color32::WHITE));p.line(Line::new("Redistribution",vec![[0.,0.],self.alloc.z]).color(TEAL).width(2.0_f32));
                     if p.response().clicked(){p.pointer_coordinate()}else{None}
@@ -254,7 +313,7 @@ impl Studio {
                 for i in 0..5 {
                     let color = if i == 4 {
                         TEAL
-                    } else if i == selected + 2 {
+                    } else if i == 0 {
                         GOLD
                     } else {
                         BLUE

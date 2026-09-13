@@ -567,7 +567,10 @@ if ui.button("Load scene").clicked(){self.load_preset();}});
                     ]
                 })
                 .collect::<Vec<_>>();
-            surface(ui, h, &mut self.camera, &grid, [lo, hi], &path);
+            ui.columns(2, |c| {
+                surface(&mut c[0], h, &mut self.camera, &grid, [lo, hi], &path);
+                self.differential_view(&mut c[1], p);
+            });
         } else {
             let mut pixels = Vec::with_capacity(n * n);
             for j in (0..n).rev() {

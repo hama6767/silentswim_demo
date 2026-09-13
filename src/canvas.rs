@@ -96,8 +96,12 @@ pub fn surface(
     }
     let scale =
         ((r.width() - 90.) / bounds.width()).min((r.height() - 65.) / bounds.height()) as f64;
-    let offset = (r.center() - bounds.center()) * scale as f32;
-    let proj = |v| cam.project(v, r.translate(offset), scale);
+    // Plot axes are normalized; use extra horizontal space without clipping.
+    let sx = (scale * 1.6).min(((r.width() - 70.) / bounds.width()) as f64) as f32;
+    let proj = |v| {
+        let unit = cam.project(v, r, 1.0) - bounds.center();
+        r.center() + Vec2::new(unit.x * sx, unit.y * scale as f32)
+    };
     let nx = grid.len();
     let ny = grid[0].len();
     let dz = (range[1] - range[0]).max(1e-9);

@@ -24,7 +24,7 @@ The integral uses positive frequency bins `ν_k = k * 44100 / 4096`, `k = 1..204
 
 The supported active command domain is `A ∈ [0.4,1.2] rad`, `f ∈ [0.3,2.3] Hz`. Center angle is fixed within each solve. The cost is `lambda_h L + lambda_F (F-F*)² + lambda_R R`, where `R` is squared displacement from the initial command, normalized by the A and f ranges. This regularizer is an explicit demo choice because the paper does not fully specify its single-fin form.
 
-Forward-mode automatic differentiation gives command gradients. Up to 100 projected Adam steps use monotone backtracking; a steepest-descent direction replaces momentum if it points uphill. The demo solver is designed to make a readable trajectory and **does not reproduce the paper's single-fin optimizer timing**. The path is not constrained to a constant-force curve. Zero requested force is an explicit inactive command (`A = 0`), outside the active amplitude domain. The penalty sweep is a collection of local solutions, not a certified Pareto frontier.
+Forward-mode automatic differentiation gives command gradients. Up to 100 projected Adam steps use monotone backtracking; a steepest-descent direction replaces momentum if it points uphill. The demo solver is designed to make a readable trajectory and **does not reproduce the paper's single-fin optimizer timing**. The path is not constrained to a constant-force curve. Zero requested force is an explicit inactive command (`A = 0`), outside the active amplitude domain. The penalty sweep is a collection of local solutions, not a certified Pareto frontier. The 3D view additionally shows acoustic, force and objective derivatives and a symmetrized Hessian computed by central differences of AD gradients (step 1e-4); its eigenvalues describe local curvature in unscaled A/f coordinates, not a proof of global optimality. Surface coordinates are normalized and stretched horizontally to fit the panel.
 
 ## Four-fin allocation (Eqs. 8–19)
 
@@ -64,4 +64,3 @@ The Evidence page transcribes Table I (n=30 per method), Table II (n=8 per task/
 - Four-fin improvement/feasibility acceptance and post-deadband rejection.
 - Direct spectral quadrature agrees with factorized differentiable score.
 - Invalid scene versions, non-finite values and out-of-range commands are rejected.
-
