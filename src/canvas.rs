@@ -163,7 +163,7 @@ pub fn surface(
     p.text(
         r.left_top() + Vec2::new(14., 12.),
         egui::Align2::LEFT_TOP,
-        "DRAG TO ORBIT  /  DOUBLE-CLICK TO RESET",
+        "Drag to rotate · double-click to reset",
         egui::FontId::monospace(10.),
         MUTED,
     );
@@ -177,7 +177,7 @@ pub fn robot(
     a: &Allocation,
     t: f64,
 ) {
-    robot_components(ui, height, cam, g, a, t, None);
+    robot_components(ui, height, cam, g, a, t, None, None);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -189,6 +189,7 @@ pub fn robot_components(
     a: &Allocation,
     t: f64,
     selected: Option<usize>,
+    target: Option<&crate::model::Wrench>,
 ) {
     let (r, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::drag());
@@ -256,12 +257,13 @@ pub fn robot_components(
             arrow(&p, proj(pos), proj(v), color, 2.8);
         }
         if selected == Some(i) {
+            let force_scale = 0.9 / a.q[i].hypot(a.q[i + 4]).max(1.);
             let hv = [
-                pos[0] + dir[0] * a.q[i] * 0.9,
-                pos[1] + dir[1] * a.q[i] * 0.9,
+                pos[0] + dir[0] * a.q[i] * force_scale,
+                pos[1] + dir[1] * a.q[i] * force_scale,
                 pos[2],
             ];
-            let vv = [pos[0], pos[1], pos[2] + a.q[i + 4] * 0.9];
+            let vv = [pos[0], pos[1], pos[2] + a.q[i + 4] * force_scale];
             let full = [hv[0], hv[1], vv[2]];
             arrow(&p, proj(pos), proj(hv), TEAL, 3.5);
             arrow(&p, proj(pos), proj(vv), BLUE, 3.5);
@@ -291,6 +293,26 @@ pub fn robot_components(
             color,
         );
     }
+    if let Some(w) = target {
+        let magnitude = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+        if magnitude > 1e-10 {
+            let origin = [0., 0., 0.18];
+            let arrow_scale = 0.85 / magnitude.max(1.);
+            let tip = [
+                w[0] * arrow_scale,
+                w[1] * arrow_scale,
+                origin[2] + w[2] * arrow_scale,
+            ];
+            arrow(&p, proj(origin), proj(tip), Color32::WHITE, 3.);
+            p.text(
+                proj(tip) + Vec2::new(8., -10.),
+                egui::Align2::LEFT_BOTTOM,
+                "F target",
+                egui::FontId::proportional(13.),
+                Color32::WHITE,
+            );
+        }
+    }
     let origin = [-1.15, -0.7, -0.45];
     for (v, label, c) in [
         ([0.4, 0., 0.], "x", RED),
@@ -310,7 +332,7 @@ pub fn robot_components(
     p.text(
         r.left_top() + Vec2::new(14., 12.),
         egui::Align2::LEFT_TOP,
-        "ILLUSTRATIVE GEOMETRY  /  DRAG TO ORBIT",
+        "Body frame · x forward / y left / z up",
         egui::FontId::monospace(10.),
         MUTED,
     );

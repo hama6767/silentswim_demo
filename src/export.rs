@@ -1,7 +1,7 @@
 impl Studio {
     fn preset(&self) -> Preset {
         Preset {
-            version: 1,
+            version: 2,
             profile: self.profile,
             single: self.single.clone(),
             allocation: self.alloc.clone(),
@@ -119,6 +119,24 @@ impl Studio {
             );
         }
         write("four-fin-allocation.csv", csv)?;
+        let target = self.alloc.target(&self.geometry);
+        let baseline = self.geometry.b * self.alloc.qref();
+        let selected = self.geometry.b * a.q;
+        let realized = a.realized_wrench(&self.geometry);
+        let mut csv = "component,unit,target,baseline,selected,realized,error\n".to_string();
+        for i in 0..6 {
+            csv += &format!(
+                "{},{},{},{},{},{},{}\n",
+                ["Fx", "Fy", "Fz", "Mx", "My", "Mz"][i],
+                if i < 3 { "N" } else { "N*m" },
+                target[i],
+                baseline[i],
+                selected[i],
+                realized[i],
+                realized[i] - target[i]
+            );
+        }
+        write("body-wrench.csv", csv)?;
         write(
             "scene.json",
             serde_json::to_string_pretty(&self.preset()).map_err(|e| e.to_string())?,
@@ -171,10 +189,11 @@ impl Studio {
         }
         let (qa, frame, total, fps) = (r.qa, r.frame, r.total, r.fps);
         if qa {
+            self.presentation = frame == 7;
             self.tab = match frame {
                 0 => 0,
                 1 | 2 => 1,
-                3 | 4 => 2,
+                3 | 4 | 6..=9 => 2,
                 _ => 3,
             };
             self.surface_mode = frame == 2;
@@ -184,6 +203,16 @@ impl Studio {
             self.cursor = self.path.len() - 1;
             self.phase = 0.6;
             self.playing = false;
+            if frame >= 6 {
+                self.alloc = AllocSettings::default();
+                self.alloc.body_target = Some(match frame {
+                    6 => [0.; 6],
+                    7 => [-1.2, 0.4, -0.8, 0.12, -0.08, 0.15],
+                    8 => [7., 0., 0., 0., 0., 0.],
+                    _ => [100., 0., 0., 0., 0., 0.],
+                });
+                self.alloc.restore_reference();
+            }
             if frame == 3 {
                 let (a, status) = refine(&self.model, &self.geometry, &self.alloc);
                 self.alloc = a;
@@ -276,11 +305,13 @@ impl Studio {
                     r.fps
                 );
                 let result = std::fs::write(r.dir.join("encode-mp4.ps1"), script)
+                    .and_then(|_| std::fs::write(r.dir.join("encode-mp4.sh"),format!(
+                        "#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\nexec \"${{FFMPEG:-ffmpeg}}\" -n -framerate {} -i 'frame-%06d.png' -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -crf 18 -pix_fmt yuv420p silentswim-demo.mp4\n",r.fps)))
                     .map_err(|e| e.to_string())
                     .and_then(|_| self.write_data(&r.dir));
                 self.status = match result {
                     Ok(()) => format!(
-                        "Export complete: {} frames + encode-mp4.ps1 in {}",
+                        "Export complete: {} frames + encoder scripts in {}",
                         r.total,
                         r.dir.display()
                     ),
@@ -333,7 +364,9 @@ fn validate_preset(p: &Preset) -> Result<(), String> {
     let check = |v: f64, lo: f64, hi: f64| v.is_finite() && (lo..=hi).contains(&v);
     let s = &p.single;
     let a = &p.allocation;
-    let valid = p.version == 1
+    let valid = (p.version == 1 || p.version == 2)
+        && a.body_target
+            .is_none_or(|w| w.iter().all(|v| check(*v, -100., 100.)))
         && check(s.start[0], AMIN, AMAX)
         && check(s.start[1], FMIN, FMAX)
         && check(s.target, 0., 2.8)
@@ -527,7 +560,7 @@ mod scene_tests {
     #[test]
     fn reject_invalid_scenes() {
         let mut p = Preset {
-            version: 1,
+            version: 2,
             profile: Profile::Catfish,
             single: SingleSettings::default(),
             allocation: AllocSettings::default(),
@@ -538,5 +571,14 @@ mod scene_tests {
         p.single.start[0] = 0.8;
         p.allocation.deadband = f64::NAN;
         assert!(validate_preset(&p).is_err());
+        p.allocation.deadband = 0.;
+        p.allocation.body_target = Some([f64::NAN; 6]);
+        assert!(validate_preset(&p).is_err());
+        p.allocation.body_target = Some([101.; 6]);
+        assert!(validate_preset(&p).is_err());
+        p.allocation.body_target = Some([-1., 0.2, 0.8, 0.1, -0.2, 0.15]);
+        let loaded: Preset = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert!(validate_preset(&loaded).is_ok());
+        assert_eq!(loaded.allocation.body_target, p.allocation.body_target);
     }
 }

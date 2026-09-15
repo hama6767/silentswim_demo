@@ -59,7 +59,7 @@ impl Studio {
         );
     }
     fn allocation_view(&mut self, ui: &mut egui::Ui, height: f32) {
-        self.heading(ui,"03 / REDUNDANCY -> QUIETER ALLOCATION","Change the fin commands. Keep the modeled wrench.","Illustrative rank-six geometry, two null coordinates, four frequency variables, and exact force inversion.");
+        self.body_target_controls(ui);
         let a = allocation(
             &self.model,
             &self.geometry,
@@ -67,7 +67,13 @@ impl Studio {
             self.alloc.z,
             self.alloc.frequencies,
         );
-        let reference = allocation(&self.model, &self.geometry, &self.alloc, [0.; 2], [1.5; 4]);
+        let reference = allocation(
+            &self.model,
+            &self.geometry,
+            &self.alloc,
+            [0.; 2],
+            self.alloc.reference_frequencies(),
+        );
         ui.columns(4, |c| {
             Self::metric(
                 &mut c[0],
@@ -86,7 +92,9 @@ impl Studio {
             Self::metric(
                 &mut c[2],
                 "COMPOSED ACOUSTIC CHANGE",
-                if let (Some(l), Some(r)) = (a.level, reference.level) {
+                if !a.feasible || !reference.feasible {
+                    "Unavailable".into()
+                } else if let (Some(l), Some(r)) = (a.level, reference.level) {
                     format!("{:+.2} dB", l - r)
                 } else {
                     "Inactive".into()
@@ -186,14 +194,14 @@ impl Studio {
         ui.columns(2,|cols|{
             cols[0].label("Allocation matrix B in R^(6×8)");
             egui::Grid::new("B").spacing([8.,7.]).show(&mut cols[0],|ui|{
-                for r in 0..6 {ui.label(RichText::new(["Fx","Fy","Fz","τx","τy","τz"][r]).color(TEAL));for c in 0..8{let v=self.geometry.b[(r,c)];ui.label(RichText::new(format!("{v:5.2}")).monospace().color(if v.abs()<1e-9{MUTED.gamma_multiply(0.45)}else{BLUE}));}ui.end_row();}
+                for r in 0..6 {ui.label(RichText::new(["Fx","Fy","Fz","Mx","My","Mz"][r]).color(TEAL));for c in 0..8{let v=self.geometry.b[(r,c)];ui.label(RichText::new(format!("{v:5.2}")).monospace().color(if v.abs()<1e-9{MUTED.gamma_multiply(0.45)}else{BLUE}));}ui.end_row();}
             });
             Self::note(&mut cols[0],"Columns: h1 h2 h3 h4 v1 v2 v3 v4\nRows: forces [N], then moments [N·m].\nFin locations: x = ±0.65 m, y = ±0.40 m.\nHorizontal directions: ±45° in each fin plane.");
             cols[1].label("Orthonormal null basis N in R^(8×2)");
             egui::Grid::new("N").spacing([22.,5.]).show(&mut cols[1],|ui|{for r in 0..8 {ui.monospace(format!("{}{}",if r<4{"h"}else{"v"},r%4+1));for c in 0..2{ui.label(RichText::new(format!("{:+.2}",self.geometry.n[(r,c)])).monospace().color(TEAL));}ui.end_row();}});
         });
         ui.add_space(12.);
-        let reference = self.geometry.b * self.alloc.qref();
+        let reference = self.alloc.target(&self.geometry);
         let allocated = self.geometry.b * a.q;
         let mut realized = Q::zeros();
         for i in 0..4 {
@@ -208,7 +216,7 @@ impl Studio {
             .show(ui, |ui| {
                 for t in [
                     "WRENCH",
-                    "REFERENCE",
+                    "TARGET",
                     "B(q_ref + Nz)",
                     "FROM FINAL A, f, θ",
                     "ERROR",
@@ -222,9 +230,9 @@ impl Studio {
                             "Fx [N]",
                             "Fy [N]",
                             "Fz [N]",
-                            "τx [N·m]",
-                            "τy [N·m]",
-                            "τz [N·m]",
+                            "Mx [N·m]",
+                            "My [N·m]",
+                            "Mz [N·m]",
                         ][i],
                     );
                     ui.monospace(format!("{:.6}", reference[i]));
@@ -241,7 +249,7 @@ impl Studio {
         ui.add_space(8.);
     }
     fn evidence(&mut self, ui: &mut egui::Ui, height: f32) {
-        self.heading(ui,"04 / REPORTED EXPERIMENTAL EVIDENCE","Acoustic benefit and tracking are separate outcomes","Paper Tables I–II; values are reported means and standard deviations, not simulated trials.");
+        self.heading(ui,"04 / REPORTED EXPERIMENTAL EVIDENCE","Experimental results","Paper Tables I–II; values are reported means and standard deviations, not simulated trials.");
         ui.columns(3, |c| {
             Self::metric(
                 &mut c[0],

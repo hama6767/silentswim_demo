@@ -1,4 +1,4 @@
-name: Windows Release
+name: Release
 
 on:
   push:
@@ -19,7 +19,22 @@ concurrency:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            rustflags: -C target-feature=+crt-static
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x64
+            rustflags: ''
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: pwsh
     timeout-minutes: 40
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -34,6 +49,12 @@ jobs:
           if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+([-.][A-Za-z0-9.]+)?$') { throw 'Expected a semantic version tag.' }
           git show-ref --verify "refs/tags/$env:RELEASE_TAG"
           if ($LASTEXITCODE -ne 0) { throw 'Tag does not exist.' }
+      - name: Install Linux graphics dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev pkg-config xvfb
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -48,11 +69,36 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --locked --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build self-contained Windows x64 executable
+      - name: Build native executable
         env:
-          RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --locked --release --target x86_64-pc-windows-msvc
-      - name: Package release and SHA256
+          RUSTFLAGS: ${{ matrix.rustflags }}
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Linux native rendering smoke test
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          xvfb-run -a -s '-screen 0 1920x1200x24' timeout 120s target/${{ matrix.target }}/release/silentswim-studio --capture-all --out smoke-captures
+          test "$(find smoke-captures -name 'view-*.png' | wc -l)" -eq 10
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: linux-native-captures
+          path: smoke-captures/*.png
+          if-no-files-found: error
+      - name: Package Linux release
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p package dist
+          cp target/${{ matrix.target }}/release/silentswim-studio package/
+          cp README.md LICENSE package/
+          cp -r docs package/
+          cp package/silentswim-studio dist/silentswim-studio-linux-x64
+          tar -czf "dist/silentswim-studio-$RELEASE_TAG-linux-x64.tar.gz" -C package .
+      - name: Package Windows release
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path package,dist -Force | Out-Null
@@ -61,10 +107,9 @@ jobs:
           Copy-Item docs package/ -Recurse
           Copy-Item package/silentswim-studio.exe dist/
           Compress-Archive -Path package/* -DestinationPath "dist/silentswim-studio-$env:RELEASE_TAG-windows-x64.zip"
-          Get-ChildItem dist -File | ForEach-Object { $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower(); "$hash  $($_.Name)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: release-assets
+          name: release-assets-${{ matrix.platform }}
           path: dist/*
           if-no-files-found: error
 
@@ -83,10 +128,12 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
-          name: release-assets
+          pattern: release-assets-*
+          merge-multiple: true
           path: dist
       - name: Publish tested executable
         run: |
+          (cd dist && sha256sum silentswim-* > SHA256SUMS.txt)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/* --clobber
           else

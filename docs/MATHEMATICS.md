@@ -30,7 +30,7 @@ Forward-mode automatic differentiation gives command gradients. Up to 100 projec
 
 The illustrative symmetric geometry has fin positions `(±0.65, ±0.40, 0) m`. Horizontal fin directions are `(c,c,0), (c,-c,0), (c,-c,0), (c,c,0)`, where `c = 1/sqrt(2)`. Vertical directions are `(0,0,1)`. Each column of `B` consists of force direction followed by `position × direction`. Its rank is six. Force vector ordering is `[h1,h2,h3,h4,v1,v2,v3,v4]`.
 
-The two orthonormal null vectors have nonzero components `[1,1,-1,-1]/2` in the horizontal block and `[1,-1,-1,1]/2` in the vertical block. Thus `BN = 0`, and `q = q_ref + Nz` preserves the full modeled wrench. The current nominal component scales define `q_ref`; they are not arbitrary unconstrained body-wrench requests. Center angles use rotation convention `r_i = +1` for this illustrative geometry.
+The two orthonormal null vectors have nonzero components `[1,1,-1,-1]/2` in the horizontal block and `[1,-1,-1,1]/2` in the vertical block. Thus `BN = 0`, and `q = q_ref + Nz` preserves the full modeled wrench. In v0.3 the user enters body-frame `w* = [Fx,Fy,Fz,Mx,My,Mz]`. The baseline is `q_ref = Bᵀ(BBᵀ)⁻¹ w*`, evaluated analytically for this fixed geometry. Its six rows are orthogonal. This is a minimum-norm allocator without actuator saturation optimization: a rejected baseline is not proof that every distribution is infeasible. Targets are never silently scaled. Legacy scenes without `body_target` retain the original h/v-scaled q_ref. New defaults request [1.6,0,1.1,0,0,0]. Center angles use rotation convention `r_i = +1` for this illustrative geometry.
 
 Force magnitude is `sqrt(h_i² + v_i²)`. For active fins, the frequency interval is:
 
@@ -39,7 +39,7 @@ lower = max(f_min, sqrt(F_i / (k0 * (1 - cos(A_max)))))
 upper = min(f_max, sqrt(F_i / (k0 * (1 - cos(A_min)))))
 ```
 
-An empty interval is rejected. Amplitude is `acos(1 - F_i/(k0*f_i²))`. Zero-force fins use zero amplitude and are excluded from the acoustic sum. If all fins are inactive the score is displayed as inactive, without inventing a finite silence measurement.
+The baseline frequency is 1.5 Hz clamped to each fin's admissible interval; baseline A/f regularizers and acoustic comparisons use these same frequencies. An empty interval is rejected. Amplitude is `acos(1 - F_i/(k0*f_i²))`. Zero-force fins use zero amplitude and are excluded from the acoustic sum. If all fins are inactive the score is displayed as inactive, without inventing a finite silence measurement.
 
 Four-fin scores are composed with a numerically stable log-sum of **linear powers**. The displayed example model already produces dB; a real standardized network must first be de-standardized. Eq. 19 uses illustrative `mu_L = -40 dB` and `sigma_L = 10 dB`, `q_scale = max(mean(abs(q_ref)),0.05 N)`, and weights from the paper: `lambda_h=1`, `lambda_q=0.05`, `lambda_A=0.02`, `lambda_f,reg=0.02`. Command range normalization and the 1/8 and 1/4 factors are applied explicitly.
 
@@ -64,3 +64,6 @@ The Evidence page transcribes Table I (n=30 per method), Table II (n=8 per task/
 - Four-fin improvement/feasibility acceptance and post-deadband rejection.
 - Direct spectral quadrature agrees with factorized differentiable score.
 - Invalid scene versions, non-finite values and out-of-range commands are rejected.
+
+- Body-frame right inverse agrees with a numerical matrix inverse; signed six-axis, zero, and high valid requests survive force inversion/refinement.
+- Impossible requests remain unchanged and are rejected; legacy scenes retain their original baseline.

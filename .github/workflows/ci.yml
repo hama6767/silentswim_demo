@@ -37,3 +37,19 @@ jobs:
           name: silentswim-studio-windows-x64
           path: target/release/silentswim-studio.exe
           if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings

@@ -256,6 +256,7 @@ pub fn optimize_single(m: &Acoustics, s: &SingleSettings) -> Vec<Step> {
 pub type BMatrix = SMatrix<f64, 6, 8>;
 pub type NMatrix = SMatrix<f64, 8, 2>;
 pub type Q = SVector<f64, 8>;
+pub type Wrench = SVector<f64, 6>;
 #[derive(Clone)]
 pub struct Geometry {
     pub b: BMatrix,
@@ -306,6 +307,9 @@ impl Geometry {
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AllocSettings {
+    /// None retains the original h/v reference when loading a v1 scene.
+    #[serde(default)]
+    pub body_target: Option<[f64; 6]>,
     pub z: [f64; 2],
     pub frequencies: [f64; 4],
     pub heave: f64,
@@ -318,6 +322,7 @@ pub struct AllocSettings {
 impl Default for AllocSettings {
     fn default() -> Self {
         Self {
+            body_target: Some([1.6, 0., 1.1, 0., 0., 0.]),
             z: [0.; 2],
             frequencies: [1.5; 4],
             heave: 0.28,
@@ -331,6 +336,27 @@ impl Default for AllocSettings {
 }
 impl AllocSettings {
     pub fn qref(&self) -> Q {
+        if let Some(w) = self.body_target {
+            // B^T (B B^T)^-1 w for Geometry::demo(). Its rows are orthogonal.
+            // Evaluated analytically because this is also used at every map pixel.
+            let c = 0.5_f64.sqrt();
+            let h = w[0] / (4. * c);
+            let y = w[1] / (4. * c);
+            let yaw = w[5] / c;
+            let v = w[2] / 4.;
+            let roll = w[3] / 1.6;
+            let pitch = w[4] / 2.6;
+            return Q::from_row_slice(&[
+                h + y + yaw,
+                h - y - yaw,
+                h - y + yaw,
+                h + y - yaw,
+                v + roll - pitch,
+                v - roll - pitch,
+                v + roll + pitch,
+                v - roll + pitch,
+            ]);
+        }
         Q::from_row_slice(&[
             self.surge * 1.25,
             self.surge * 0.7,
@@ -341,6 +367,20 @@ impl AllocSettings {
             self.heave * 1.2,
             self.heave,
         ])
+    }
+    pub fn target(&self, g: &Geometry) -> Wrench {
+        self.body_target
+            .map_or_else(|| g.b * self.qref(), |w| Wrench::from_row_slice(&w))
+    }
+    pub fn reference_frequencies(&self) -> [f64; 4] {
+        let q = self.qref();
+        std::array::from_fn(|i| {
+            interval(q[i].hypot(q[i + 4])).map_or(1.5, |(lo, hi)| 1.5_f64.clamp(lo, hi))
+        })
+    }
+    pub fn restore_reference(&mut self) {
+        self.z = [0.; 2];
+        self.frequencies = self.reference_frequencies();
     }
 }
 #[derive(Clone)]
@@ -355,6 +395,17 @@ pub struct Allocation {
     pub cost: f64,
     pub residual: f64,
     pub feasible: bool,
+}
+impl Allocation {
+    pub fn realized_wrench(&self, g: &Geometry) -> Wrench {
+        let mut q = Q::zeros();
+        for i in 0..4 {
+            let magnitude = force(self.amplitude[i], self.frequency[i]);
+            q[i] = magnitude * self.theta[i].cos();
+            q[i + 4] = magnitude * self.theta[i].sin();
+        }
+        g.b * q
+    }
 }
 pub fn allocation(
     m: &Acoustics,
@@ -398,14 +449,15 @@ pub fn allocation(
             .map(|i| scores[i])
             .collect::<Vec<_>>(),
     );
-    let residual = (g.b * realized - g.b * qr).norm();
+    let residual = (g.b * realized - s.target(g)).norm();
     let qscale = (qr.iter().map(|v| v.abs()).sum::<f64>() / 8.).max(0.05);
     let mut cost = level.map_or(0., |v| (v + 40.) / 10.); // illustrative surrogate target mean/std
     cost += s.q_weight / 8. * ((q - qr) / qscale).norm_squared();
     for i in 0..4 {
-        let ar = inverse(qr[i].hypot(qr[i + 4]), 1.5).unwrap_or(0.);
+        let fr = s.reference_frequencies()[i];
+        let ar = inverse(qr[i].hypot(qr[i + 4]), fr).unwrap_or(0.);
         cost += s.a_weight / 4. * ((a[i] - ar) / (AMAX - AMIN)).powi(2)
-            + s.f_weight / 4. * ((f[i] - 1.5) / (FMAX - FMIN)).powi(2);
+            + s.f_weight / 4. * ((f[i] - fr) / (FMAX - FMIN)).powi(2);
     }
     Allocation {
         q,
@@ -477,20 +529,20 @@ pub fn allocation_cost(m: &Acoustics, g: &Geometry, s: &AllocSettings, x: [Jet; 
         cost = cost + ((q[i] - qr[i]) / scale).sq() * (s.q_weight / 8.);
     }
     for i in 0..4 {
-        let ar = inverse(qr[i].hypot(qr[i + 4]), 1.5).unwrap_or(0.);
+        let fr = s.reference_frequencies()[i];
+        let ar = inverse(qr[i].hypot(qr[i + 4]), fr).unwrap_or(0.);
         cost = cost
             + ((a[i] - ar) / (AMAX - AMIN)).sq() * (s.a_weight / 4.)
-            + ((f[i] - 1.5) / (FMAX - FMIN)).sq() * (s.f_weight / 4.);
+            + ((f[i] - fr) / (FMAX - FMIN)).sq() * (s.f_weight / 4.);
     }
     Some(cost)
 }
 pub fn refine(m: &Acoustics, g: &Geometry, s: &AllocSettings) -> (AllocSettings, String) {
-    let baseline = allocation(m, g, s, [0.; 2], [1.5; 4]);
+    let baseline = allocation(m, g, s, [0.; 2], s.reference_frequencies());
     if !baseline.feasible {
         return (
             s.clone(),
-            "Nominal command fails feasibility / post-processing; adjust request or deadband."
-                .into(),
+            "Baseline violates fin limits or deadband. Change the body target or deadband.".into(),
         );
     }
     let mut seeds = vec![
@@ -505,7 +557,7 @@ pub fn refine(m: &Acoustics, g: &Geometry, s: &AllocSettings) -> (AllocSettings,
     let mut best = baseline.cost;
     let mut result = s.clone();
     result.z = [0.; 2];
-    result.frequencies = [1.5; 4];
+    result.frequencies = s.reference_frequencies();
     for z in seeds {
         for fseed in [1.0, 1.5, 2.0] {
             let q = s.qref() + g.n * SVector::<f64, 2>::from_row_slice(&z);
@@ -570,6 +622,77 @@ pub fn refine(m: &Acoustics, g: &Geometry, s: &AllocSettings) -> (AllocSettings,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn body_targets_match_matrix_right_inverse() {
+        let g = Geometry::demo();
+        let pinv = g.b.transpose() * (g.b * g.b.transpose()).try_inverse().unwrap();
+        for w in [
+            [1.2, -0.4, 0.8, 0.12, -0.08, 0.15],
+            [-2., 0.3, -0.7, -0.2, 0.3, -0.1],
+            [0.; 6],
+        ] {
+            let s = AllocSettings {
+                body_target: Some(w),
+                ..Default::default()
+            };
+            let target = Wrench::from_row_slice(&w);
+            assert!((s.qref() - pinv * target).norm() < 1e-12);
+            assert!((g.b * s.qref() - target).norm() < 1e-12);
+            assert!((g.n.transpose() * s.qref()).norm() < 1e-12);
+        }
+    }
+    #[test]
+    fn target_roundtrip_after_refinement_and_force_inversion() {
+        let g = Geometry::demo();
+        let m = Acoustics::new(Profile::Catfish);
+        for w in [
+            [1.2, -0.4, 0.8, 0.12, -0.08, 0.15],
+            [-2., 0.3, -0.7, -0.2, 0.3, -0.1],
+            [7., 0., 0., 0., 0., 0.],
+            [0.; 6],
+        ] {
+            let mut s = AllocSettings {
+                body_target: Some(w),
+                ..Default::default()
+            };
+            s.restore_reference();
+            let a = allocation(&m, &g, &s, s.z, s.frequencies);
+            assert!(a.feasible, "baseline {w:?}");
+            assert!((a.realized_wrench(&g) - s.target(&g)).norm() < 1e-9);
+            let (optimized, _) = refine(&m, &g, &s);
+            let result = allocation(&m, &g, &optimized, optimized.z, optimized.frequencies);
+            assert!(result.feasible);
+            assert!((result.realized_wrench(&g) - s.target(&g)).norm() < 1e-9);
+            assert!(result.cost <= a.cost + 1e-9);
+            if w == [0.; 6] {
+                assert_eq!(result.active, [false; 4]);
+                assert!(result.level.is_none());
+            }
+        }
+    }
+    #[test]
+    fn unachievable_target_is_preserved_and_rejected() {
+        let g = Geometry::demo();
+        let m = Acoustics::new(Profile::Catfish);
+        let s = AllocSettings {
+            body_target: Some([100., 0., 0., 0., 0., 0.]),
+            ..Default::default()
+        };
+        let (r, _) = refine(&m, &g, &s);
+        assert_eq!(r.body_target, s.body_target);
+        let a = allocation(&m, &g, &r, r.z, r.frequencies);
+        assert!(!a.feasible);
+        assert!(a.residual > 90.);
+    }
+    #[test]
+    fn legacy_reference_survives_scene_deserialization() {
+        let mut value = serde_json::to_value(AllocSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("body_target");
+        let s: AllocSettings = serde_json::from_value(value).unwrap();
+        assert!(s.body_target.is_none());
+        assert!((s.qref()[0] - 0.6875).abs() < 1e-12);
+        assert!((s.target(&Geometry::demo())[2] - 1.12).abs() < 1e-12);
+    }
     #[test]
     fn force_inverse_roundtrip() {
         for a in [0.4, 0.7, 1.2] {

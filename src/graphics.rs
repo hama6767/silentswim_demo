@@ -1,4 +1,67 @@
 impl Studio {
+    fn body_target_controls(&mut self, ui: &mut egui::Ui) {
+        let mut target: [f64; 6] = self.alloc.target(&self.geometry).into();
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Body-frame target").strong());
+            ui.label(
+                RichText::new("x forward / y left / z up")
+                    .small()
+                    .color(MUTED),
+            );
+            for (label, w) in [
+                ("Surge", [1.6, 0., 0., 0., 0., 0.]),
+                ("Heave", [0., 0., 1.1, 0., 0., 0.]),
+                ("Yaw", [0., 0., 0., 0., 0., 0.3]),
+                ("Zero", [0.; 6]),
+                ("Default", [1.6, 0., 1.1, 0., 0., 0.]),
+            ] {
+                if ui.small_button(label).clicked() {
+                    target = w;
+                    changed = true;
+                }
+            }
+        });
+        let a = allocation(
+            &self.model,
+            &self.geometry,
+            &self.alloc,
+            self.alloc.z,
+            self.alloc.frequencies,
+        );
+        let realized = a.realized_wrench(&self.geometry);
+        ui.columns(6, |cols| {
+            for (i,col) in cols.iter_mut().enumerate() {
+                col.label(RichText::new(["Fx [N]","Fy [N]","Fz [N]","Mx [N m]","My [N m]","Mz [N m]"][i]).color(GOLD));
+                changed |= col.add(egui::DragValue::new(&mut target[i]).speed(0.02).range(-100. ..=100.).min_decimals(3))
+                    .on_hover_text("Drag or double-click to type. Editing resets the null coordinates and selects feasible baseline frequencies where possible. The target is not scaled to fit fin limits.").changed();
+                col.label(RichText::new(format!("actual {:+.3}",realized[i])).monospace().small()
+                    .color(if (realized[i]-target[i]).abs()<1e-8 {TEAL} else {RED}));
+            }
+        });
+        if changed {
+            self.alloc.body_target = Some(target);
+            self.alloc.restore_reference();
+            self.story = false;
+            self.status = "Body target updated".into();
+        }
+        ui.add_space(3.);
+        let baseline = allocation(
+            &self.model,
+            &self.geometry,
+            &self.alloc,
+            [0.; 2],
+            self.alloc.reference_frequencies(),
+        );
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(if self.alloc.body_target.is_some() {
+                "w*  ->  qref = B^+ w*  ->  q = qref + Nz  ->  A, f, theta"
+            } else { "Loaded qref  ->  w* = B qref  ->  q = qref + Nz  ->  A, f, theta" }).monospace().small().color(MUTED))
+                .on_hover_text("B⁺ is the minimum-norm right inverse of the illustrative allocation matrix. This initial allocator has no saturation solver; a rejected baseline does not prove that every possible allocation is infeasible.");
+            if !baseline.feasible { ui.colored_label(RED,"Baseline violates fin limits / deadband"); }
+        });
+        ui.add_space(6.);
+    }
     fn graphic_controls(&mut self, ctx: &egui::Context) {
         if self.presentation {
             return;
@@ -8,9 +71,9 @@ impl Studio {
             egui::ScrollArea::vertical().show(ui,|ui|{
                 let old=self.profile;let mut changed=false;
                 if self.tab != 3 {
-                    ui.label(RichText::new("LISTENER").color(TEAL).small());
+                    ui.label(RichText::new("Auditory profile").color(TEAL).small());
                     egui::ComboBox::from_id_salt("visual-profile").selected_text(self.profile.label()).show_ui(ui,|ui|{for p in Profile::ALL{ui.selectable_value(&mut self.profile,p,p.label());}});
-                } else { ui.label(RichText::new("PAPER CONDITIONS").color(GOLD).small()); ui.label("Catfish-weighted objective"); }
+                } else { ui.label(RichText::new("Experimental conditions").color(GOLD).small()); ui.label("Catfish-weighted objective"); }
                 ui.add_space(16.);
                 match self.tab {
                     0=>{changed|=ui.add(egui::Slider::new(&mut self.single.start[0],AMIN..=AMAX).text("swing A")).changed();changed|=ui.add(egui::Slider::new(&mut self.single.start[1],FMIN..=FMAX).text("rate f")).changed();},
@@ -23,13 +86,18 @@ impl Studio {
                         ui.checkbox(&mut self.show_vectors,"Gradient arrows");
                     },
                     2=>{
-                        ui.label(RichText::new("REDISTRIBUTE").small().color(TEAL));
+                        ui.collapsing("Baseline forces [N]",|ui|{
+                            let q=self.alloc.qref();
+                            for i in 0..4 {ui.monospace(format!("{}  h {:+.3}  v {:+.3}",i+1,q[i],q[i+4]));}
+                            Self::note(ui,"Minimum-norm allocation before null-space redistribution.");
+                        });
+                        ui.label("Null-space coordinates");
                         ui.add(egui::Slider::new(&mut self.alloc.z[0],-1.1..=1.1).text("z1"));ui.add(egui::Slider::new(&mut self.alloc.z[1],-1.1..=1.1).text("z2"));
                         ui.add_space(10.);ui.label("Fin frequency [Hz]");for i in 0..4{ui.add(egui::Slider::new(&mut self.alloc.frequencies[i],FMIN..=FMAX).text(format!("fin {}",i+1)));}
                         if ui.button("Find quieter allocation").clicked(){let(r,msg)=refine(&self.model,&self.geometry,&self.alloc);self.alloc=r;self.status=msg;}
-                        if ui.button("Reset allocation").clicked(){self.alloc=AllocSettings::default();}
+                        if ui.button("Reset distribution").clicked(){self.alloc.restore_reference();}
                         ui.add_space(10.);ui.label("Inspect one fin");ui.horizontal(|ui|{for i in 0..4{ui.selectable_value(&mut self.selected_fin,i,format!("{}",i+1));}});
-                        ui.collapsing("Force request / deadband",|ui|{ui.add(egui::Slider::new(&mut self.alloc.surge,0.05..=0.85).text("h scale"));ui.add(egui::Slider::new(&mut self.alloc.heave,0.0..=0.65).text("v scale"));ui.add(egui::Slider::new(&mut self.alloc.deadband,0.0..=1.2).text("A cutoff"));});
+                        ui.collapsing("Deadband",|ui|{ui.add(egui::Slider::new(&mut self.alloc.deadband,0.0..=1.2).text("A cutoff"));});
                     },
                     _=>{ui.label("Reported means");Self::note(ui,"Full results and SD: Math");}
                 }
@@ -55,11 +123,11 @@ impl Studio {
         }
     }
     fn graphic_hearing(&mut self, ui: &mut egui::Ui, height: f32) {
-        ui.heading("01  Which sound matters?");
+        ui.heading("Auditory weighting");
         let a = self.single.start[0];
         let f = self.single.start[1];
         ui.columns(2, |c| {
-            c[0].label(RichText::new("SOUND").color(TEAL));
+            c[0].label(RichText::new("Power spectrum").color(TEAL));
             Plot::new("visual-psd")
                 .height(height * 0.47)
                 .x_axis_label("log10 acoustic frequency [Hz]")
@@ -148,7 +216,7 @@ impl Studio {
         });
     }
     fn graphic_single(&mut self, ui: &mut egui::Ui, height: f32) {
-        ui.heading("02  One fin: quieter, with enough force");
+        ui.heading("Single-fin optimization");
         let p = self.current();
         let h = (height * 0.65).clamp(310., 560.);
         ui.columns(2, |c| {
@@ -282,7 +350,7 @@ impl Studio {
                 }
             }
             color_scale(&mut c[0], lo, hi, "Quieter", "Louder");
-            c[1].label("The selected command").on_hover_text(format!(
+            c[1].label("Fin motion").on_hover_text(format!(
                 "Stroke envelope drawn relative to its center angle {:.2} rad",
                 self.single.theta
             ));
@@ -314,29 +382,30 @@ impl Studio {
         ui.columns(3, |c| {
             Self::metric(
                 &mut c[0],
-                "SWING / RATE",
+                "Amplitude / frequency",
                 format!("{:.2} rad / {:.2} Hz", p.a, p.f),
                 "A / f",
                 TEAL,
             );
             Self::metric(
                 &mut c[1],
-                "ACOUSTIC CHANGE",
+                "Sound level change",
                 format!("{:+.2} dB", p.score - self.path[0].score),
                 "relative to start",
                 BLUE,
             );
             Self::metric(
                 &mut c[2],
-                "FORCE ERROR",
+                "Force error",
                 format!("{:+.3} N", p.force - self.single.target),
-                "a soft penalty permits a residual",
+                "realized - target",
                 GOLD,
             );
         });
     }
     fn graphic_allocation(&mut self, ui: &mut egui::Ui, height: f32) {
-        ui.heading("03  Four fins: redistribute the same job");
+        self.body_target_controls(ui);
+        let height = height - 105.;
         let a = allocation(
             &self.model,
             &self.geometry,
@@ -344,13 +413,19 @@ impl Studio {
             self.alloc.z,
             self.alloc.frequencies,
         );
-        let ref_a = allocation(&self.model, &self.geometry, &self.alloc, [0.; 2], [1.5; 4]);
-        let ratio = if self.presentation { 0.39 } else { 0.45 };
+        let ref_a = allocation(
+            &self.model,
+            &self.geometry,
+            &self.alloc,
+            [0.; 2],
+            self.alloc.reference_frequencies(),
+        );
+        let ratio = if self.presentation { 0.30 } else { 0.36 };
         let h = (height * ratio).clamp(220., 410.);
         ui.columns(2,|c|{
             c[0].horizontal(|ui|{ui.label(RichText::new("h: horizontal force").color(TEAL)).on_hover_text("Force along this fin's own horizontal direction; not the robot's x component.");ui.label(RichText::new("v: vertical force").color(BLUE));});
-            robot_components(&mut c[0],h,&mut self.robot_camera,&self.geometry,&a,self.phase,Some(self.selected_fin));
-            c[1].label("Redistribution map  ·  NOT a position map");
+            robot_components(&mut c[0],h,&mut self.robot_camera,&self.geometry,&a,self.phase,Some(self.selected_fin),Some(&self.alloc.target(&self.geometry)));
+            c[1].label("Null-space objective J4");
             let n=55;let mut pixels=vec![Color32::TRANSPARENT;n*n];let mut values=vec![None;n*n];let mut lo=f64::INFINITY;let mut hi=f64::NEG_INFINITY;
             for j in 0..n{for i in 0..n{let z=[-1.1+2.2*i as f64/(n-1) as f64,1.1-2.2*j as f64/(n-1) as f64];let candidate=allocation(&self.model,&self.geometry,&self.alloc,z,self.alloc.frequencies);if candidate.feasible{values[j*n+i]=Some(candidate.cost);lo=lo.min(candidate.cost);hi=hi.max(candidate.cost);}}}
             for (i,value) in values.iter().enumerate(){pixels[i]=value.map_or(Color32::from_rgb(86,37,54),|v|palette((v-lo)/(hi-lo).max(1e-9)));}
@@ -385,26 +460,37 @@ impl Studio {
         ui.add_space(8.);
         ui.columns(2, |c| {
             wrench_bars(&mut c[0], &self.geometry, &self.alloc, &a);
-            let delta = a.level.zip(ref_a.level).map(|(l, r)| l - r);
+            let delta = if a.feasible && ref_a.feasible {
+                a.level.zip(ref_a.level).map(|(l, r)| l - r)
+            } else {
+                None
+            };
             Self::metric(
                 &mut c[1],
-                "ACOUSTIC CHANGE",
-                delta.map_or("Inactive".into(), |v| format!("{v:+.2} dB")),
-                "same listener / nominal reference",
+                "Sound level change",
+                delta.map_or(
+                    if a.feasible && ref_a.feasible {
+                        "Inactive".into()
+                    } else {
+                        "Unavailable".into()
+                    },
+                    |v| format!("{v:+.2} dB"),
+                ),
+                "relative to baseline",
                 TEAL,
             );
             c[1].label(
                 RichText::new(if a.feasible {
-                    "MODEL WRENCH PRESERVED"
+                    "Target reached (model)"
                 } else {
-                    "COMMAND REJECTED"
+                    "Fin command infeasible"
                 })
                 .color(if a.feasible { TEAL } else { RED }),
             );
         });
     }
     fn graphic_evidence(&mut self, ui: &mut egui::Ui, height: f32) {
-        ui.heading("04  Measured benefit / measured tradeoff");
+        ui.heading("Experimental results");
         ui.columns(2, |c| {
             for (i, title) in ["DEPTH", "SPEED"].iter().enumerate() {
                 c[i].label(RichText::new(*title).size(23.).color(TEAL));
@@ -508,7 +594,7 @@ fn force_triangle(ui: &mut egui::Ui, height: f32, h: f64, v: f64, scale: f64) {
     );
     let p = ui.painter_at(r);
     p.rect_filled(r, 6., PANEL);
-    let o = egui::pos2(r.center().x - 20., r.center().y + 12.);
+    let o = egui::pos2(r.center().x - 20., r.center().y);
     let x = o + Vec2::new((h * scale) as f32, 0.);
     let y = o + Vec2::new(0., (-v * scale) as f32);
     let end = egui::pos2(x.x, y.y);
@@ -604,8 +690,8 @@ fn fin_motion(ui: &mut egui::Ui, height: f32, s: Step, target: f64, t: f64) {
     );
 }
 fn wrench_bars(ui: &mut egui::Ui, g: &Geometry, s: &AllocSettings, a: &Allocation) {
-    ui.label("Same body job?  outline = reference / fill = final");
-    let reference = g.b * s.qref();
+    ui.label("Body-frame error · target outline / realized fill");
+    let reference = s.target(g);
     let mut q = Q::zeros();
     for i in 0..4 {
         let f = force(a.amplitude[i], a.frequency[i]);
@@ -619,9 +705,9 @@ fn wrench_bars(ui: &mut egui::Ui, g: &Geometry, s: &AllocSettings, a: &Allocatio
         let col = if a.feasible { TEAL } else { RED };
         let width = r.width() / 6.;
         let x = r.left() + i as f32 * width;
-        let center = egui::pos2(x + width * 0.5, r.top() + 43.);
+        let center = egui::pos2(x + width * 0.5, r.top() + 36.);
         let max = reference[i].abs().max(w[i].abs()).max(0.05);
-        let to_y = |v: f64| center.y - (v / max) as f32 * 28.;
+        let to_y = |v: f64| center.y - (v / max) as f32 * 24.;
         p.line_segment(
             [
                 egui::pos2(x + 5., center.y),
@@ -647,7 +733,7 @@ fn wrench_bars(ui: &mut egui::Ui, g: &Geometry, s: &AllocSettings, a: &Allocatio
         p.text(
             egui::pos2(center.x, r.bottom() - 17.),
             egui::Align2::CENTER_BOTTOM,
-            ["Fx", "Fy", "Fz", "Tx", "Ty", "Tz"][i],
+            ["Fx", "Fy", "Fz", "Mx", "My", "Mz"][i],
             egui::FontId::proportional(12.),
             MUTED,
         );

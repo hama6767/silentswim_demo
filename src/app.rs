@@ -16,7 +16,7 @@ const CHAPTERS: [&str; 4] = [
 const CAPTIONS: [&str; 4] = [
     "Frequency-selective hearing changes which actuation command is preferred.",
     "A soft force penalty permits motion across constant-force contours.",
-    "Two null coordinates redistribute effort while preserving the modeled body wrench.",
+    "Body-frame target, baseline allocation and null-space redistribution.",
     "Received sound decreases; physical tracking must still be evaluated independently.",
 ];
 include!("views.rs");
@@ -101,7 +101,7 @@ impl Studio {
             .insert(egui::TextStyle::Body, egui::FontId::proportional(14.));
         style
             .text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(25.));
+            .insert(egui::TextStyle::Heading, egui::FontId::proportional(20.));
         style
             .text_styles
             .insert(egui::TextStyle::Small, egui::FontId::proportional(11.));
@@ -129,7 +129,7 @@ impl Studio {
             Some(Recording {
                 dir: out,
                 frame: 0,
-                total: if qa { 6 } else { seconds * fps },
+                total: if qa { 10 } else { seconds * fps },
                 fps,
                 qa,
                 prepared: false,
@@ -138,7 +138,43 @@ impl Studio {
         } else {
             None
         };
-        Self{tab:0,math_mode:false,selected_fin:0,profile:Profile::Catfish,model,single,alloc:AllocSettings::default(),geometry:Geometry::demo(),path,cursor:0,phase:0.,playing:!(qa||tour),speed:1.,story:false,presentation:false,fullscreen:false,surface_mode:false,field:0,show_vectors:false,matrix_mode:false,evidence_metric:0,camera:Camera::default(),robot_camera:Camera::default(),status:"Ready. All interactive model data are illustrative; evidence values are from the paper.".into(),texture:None,null_texture:None,recording:record,screenshot:None,capture_button:false,last:Instant::now(),tick:0.,export_seconds:24,export_fps:30,qa_exit:qa||tour,frames:0}
+        Self {
+            tab: 0,
+            math_mode: false,
+            selected_fin: 0,
+            profile: Profile::Catfish,
+            model,
+            single,
+            alloc: AllocSettings::default(),
+            geometry: Geometry::demo(),
+            path,
+            cursor: 0,
+            phase: 0.,
+            playing: !(qa || tour),
+            speed: 1.,
+            story: false,
+            presentation: false,
+            fullscreen: false,
+            surface_mode: false,
+            field: 0,
+            show_vectors: false,
+            matrix_mode: false,
+            evidence_metric: 0,
+            camera: Camera::default(),
+            robot_camera: Camera::default(),
+            status: "Illustrative model".into(),
+            texture: None,
+            null_texture: None,
+            recording: record,
+            screenshot: None,
+            capture_button: false,
+            last: Instant::now(),
+            tick: 0.,
+            export_seconds: 24,
+            export_fps: 30,
+            qa_exit: qa || tour,
+            frames: 0,
+        }
     }
     fn rebuild(&mut self) {
         self.model = Acoustics::new(self.profile);
@@ -184,7 +220,7 @@ impl Studio {
     }
     fn top(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top")
-            .exact_height(76.)
+            .exact_height(55.)
             .frame(
                 egui::Frame::new()
                     .fill(BG)
@@ -193,12 +229,7 @@ impl Studio {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("SILENTSWIM").size(25.).strong().color(TEAL));
-                        ui.label(
-                            RichText::new("HEARING-AWARE CONTROL  /  RESEARCH STUDIO")
-                                .size(10.)
-                                .color(MUTED),
-                        );
+                        ui.label(RichText::new("SilentSwim").size(20.).color(TEAL));
                     });
                     ui.add_space(28.);
                     if !self.presentation {
@@ -295,14 +326,13 @@ impl Studio {
                         Self::note(ui,"Projected Adam with monotone backtracking. Gradients use forward automatic differentiation.");
                     },
                     2=>{
-                        Self::section(ui,"NOMINAL FORCE COMPONENTS");
-                        ui.add(egui::Slider::new(&mut self.alloc.surge,0.05..=0.85).text("h scale [N]"));ui.add(egui::Slider::new(&mut self.alloc.heave,0.0..=0.65).text("v scale [N]"));
+                        Self::note(ui,"Edit the six body-frame targets above the plots.");
                         Self::section(ui,"NULL-SPACE COORDINATES");
                         ui.add(egui::Slider::new(&mut self.alloc.z[0],-1.1..=1.1).text("z1 [N]"));ui.add(egui::Slider::new(&mut self.alloc.z[1],-1.1..=1.1).text("z2 [N]"));
                         Self::section(ui,"FREQUENCY / ANALYTICAL INVERSION");
                         for i in 0..4 {ui.add(egui::Slider::new(&mut self.alloc.frequencies[i],FMIN..=FMAX).text(format!("f{} [Hz]",i+1)));}
                         if ui.button("Refine 6 variables").clicked(){let (r,status)=refine(&self.model,&self.geometry,&self.alloc);self.alloc=r;self.status=status;}
-                        if ui.button("Restore nominal").clicked(){self.alloc.z=[0.;2];self.alloc.frequencies=[1.5;4];self.status="Nominal allocation restored.".into();}
+                        if ui.button("Restore nominal").clicked(){self.alloc.restore_reference();self.status="Nominal allocation restored.".into();}
                         Self::section(ui,"POST-PROCESSING CHECK");ui.add(egui::Slider::new(&mut self.alloc.deadband,0.0..=1.2).text("A deadband"));
                         ui.checkbox(&mut self.matrix_mode,"Show B, N and wrench values");Self::note(ui,"Red regions are inadmissible at the selected frequencies. Wrench residual is recomputed from final commands, after deadband.");
                     },
@@ -329,14 +359,12 @@ if ui.button("Load scene").clicked(){self.load_preset();}});
             });
         });
     }
-    fn heading(&self, ui: &mut egui::Ui, kicker: &str, title: &str, subtitle: &str) {
-        ui.label(RichText::new(kicker).size(10.).color(TEAL).strong());
-        ui.heading(title);
-        Self::note(ui, subtitle);
+    fn heading(&self, ui: &mut egui::Ui, _kicker: &str, title: &str, subtitle: &str) {
+        ui.heading(title).on_hover_text(subtitle);
         ui.add_space(8.);
     }
     fn hearing(&mut self, ui: &mut egui::Ui, height: f32) {
-        self.heading(ui,"01 / PERCEPTION -> OBJECTIVE","Sound energy is not equally important at every frequency","Synthetic spectrum and example threshold knots; all integrals and weights are computed live.");
+        self.heading(ui,"01 / PERCEPTION -> OBJECTIVE","Auditory weighting","Synthetic spectrum and example threshold knots; all integrals and weights are computed live.");
         let a = self.single.start[0];
         let f = self.single.start[1];
         let theta = self.single.theta;
@@ -498,7 +526,7 @@ if ui.button("Load scene").clicked(){self.load_preset();}});
         }
     }
     fn single_view(&mut self, ui: &mut egui::Ui, height: f32) {
-        self.heading(ui,"02 / DIFFERENTIABLE COMMAND SELECTION","Follow the gradient. Inspect the force residual.","A and f are independent optimization variables. The force term is a soft penalty, not an equality constraint.");
+        self.heading(ui,"02 / DIFFERENTIABLE COMMAND SELECTION","Single-fin optimization","A and f are independent optimization variables. The force term is a soft penalty, not an equality constraint.");
         let p = self.current();
         ui.columns(4, |c| {
             Self::metric(
