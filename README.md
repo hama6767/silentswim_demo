@@ -90,7 +90,7 @@ See [docs/MATHEMATICS.md](docs/MATHEMATICS.md) for equations, exact illustrative
 
 ## Build and verify
 
-Rust stable and a native compiler/linker are required. On Ubuntu install build dependencies with `sudo apt install build-essential pkg-config libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev`. On Windows use Rust's `x86_64-pc-windows-msvc` target and Visual Studio C++ Build Tools.
+Rust stable and a native compiler/linker are required. On Ubuntu install build dependencies with `sudo apt install build-essential pkg-config libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev`. On Windows use Rust's `x86_64-pc-windows-msvc` target and Visual Studio C++ Build Tools.
 
 ```text
 cargo test --locked

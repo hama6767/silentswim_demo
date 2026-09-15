@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev pkg-config xvfb
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libx11-dev libgl1-mesa-dev libfontconfig1-dev pkg-config xvfb
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
